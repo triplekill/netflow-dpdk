@@ -1,0 +1,13 @@
+= Build =
+export RTE_SDK=<DPDK SDK path>
+export RTE_TARGET=x86_64-default-linuxapp-gcc
+
+make
+
+= Run =
+./dprobe -c f -n 4
+
+
+= Reference =
+* DPDK build : http://sunshout.tistory.com/1556
+
