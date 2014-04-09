@@ -51,15 +51,69 @@
 #include <rte_ethdev.h> 
 #include "dprobe.h"
 
+/*
+ * RX and TX Prefetch, Host, and Write-back threshold values should be
+ * carefully set for optimal performance. Consult the network
+ * controller's datasheet and supporting DPDK documentation for guidance
+ * on how these parameters should be set.
+ */
+#define RX_PTHRESH 8 /**< Default values of RX prefetch threshold reg. */
+#define RX_HTHRESH 8 /**< Default values of RX host threshold reg. */
+#define RX_WTHRESH 4 /**< Default values of RX write-back threshold reg. */
+
+#define MAX_PKT_BURST 32
 
 #define MBUF_SIZE (2048 + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM)
 #define NB_MBUF   8192
 
+/* Configurable number of RX ring descriptors */
+#define RTE_TEST_RX_DESC_DEFAULT 128
+#define RTE_TEST_TX_DESC_DEFAULT 512
+
 
 /* mask of enabled ports */
 static uint32_t enabled_port_mask = 0;
+static uint16_t nb_rxd = RTE_TEST_RX_DESC_DEFAULT;
+static uint16_t nb_txd = RTE_TEST_TX_DESC_DEFAULT;
+
 //static int promiscuous_on = 1; /* Ports set in promiscuous mode on by default */
  
+/**< Default values of TX prefetch threshold reg. */
+#define TX_PTHRESH 36
+#define TX_HTHRESH 0  /**< Default values of TX host threshold reg. */
+#define TX_WTHRESH 0  /**< Default values of TX write-back threshold reg. */
+
+
+static const struct rte_eth_conf port_conf = {
+	.rxmode = {
+		.split_hdr_size = 0,
+		.header_split   = 0, /**< Header Split disabled */
+		.hw_ip_checksum = 0, /**< IP checksum offload disabled */
+		.hw_vlan_filter = 0, /**< VLAN filtering disabled */
+		.jumbo_frame    = 0, /**< Jumbo Frame Support disabled */
+		.hw_strip_crc   = 0, /**< CRC stripped by hardware */
+	},
+	.txmode = {
+		.mq_mode = ETH_MQ_TX_NONE,
+	},
+};
+
+static const struct rte_eth_rxconf rx_conf = {
+	.rx_thresh = {
+		.pthresh = RX_PTHRESH,
+		.hthresh = RX_HTHRESH,
+		.wthresh = RX_WTHRESH,
+	},
+};
+static const struct rte_eth_txconf tx_conf = {
+	.tx_thresh = {
+		.pthresh = TX_PTHRESH,
+		.hthresh = TX_HTHRESH,
+		.wthresh = TX_WTHRESH,
+	},
+};
+
+
 
 /* ethernet addresses ports */
 static struct ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
@@ -70,8 +124,19 @@ static int
 lcore_probe(__attribute__((unused)) void *arg)
 {
         unsigned lcore_id;
+	unsigned portid, nb_rx;
+	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
+	
         lcore_id = rte_lcore_id();
         printf("hello from core %u\n", lcore_id);
+	while (1) {
+		portid = 0;
+		nb_rx = rte_eth_rx_burst((uint8_t)portid, 0, pkts_burst, MAX_PKT_BURST);
+		if (nb_rx > 0) {
+			printf("# of rx: %d, port id:%d\n", nb_rx, portid);
+		}
+	}
+	
         return 0;
 }
 
@@ -193,7 +258,7 @@ MAIN(int argc, char **argv)
 					sizeof(struct rte_pktmbuf_pool_private),
 					rte_pktmbuf_pool_init, NULL,
 					rte_pktmbuf_init, NULL,
-					rte_socket_id(), 0);
+					0, 0);
 	/* init driver */
 	if (rte_pmd_init_all() < 0)
 		rte_exit(EXIT_FAILURE, "Cannot init pmd\n");
@@ -208,10 +273,26 @@ MAIN(int argc, char **argv)
 	printf("Number of port:%d\n", nb_ports);
 
 	for (portid = 0; portid < nb_ports; portid++) {
+		printf("Port id:%d\n", portid);
 		if ((enabled_port_mask & (1 << portid)) == 0) {
 			printf("Skipping disabled port %d\n", portid);
 			continue;
 		}
+		/* init RX Queue */
+		rte_eth_dev_configure(portid, 1, 1, &port_conf);
+		printf("Queue setup:%d\n", portid);
+		printf("nb_rxd:%d\n", nb_rxd);
+		ret = rte_eth_rx_queue_setup(portid, 0, nb_rxd, 
+						0, &rx_conf, pktmbuf_pool);
+		printf("rx_setup:%d", ret);
+		ret = rte_eth_tx_queue_setup(portid, 0, nb_txd, 
+						0, &tx_conf);
+		printf("tx_setup:%d", ret);
+		if (ret < 0)
+			rte_exit(EXIT_FAILURE, "rte_eth_rx_queue_setup:err=%d,port=%u\n",
+						ret, (unsigned)portid);
+		fflush(stdout);
+
 		rte_eth_macaddr_get(portid, &ports_eth_addr[portid]);
 		print_ethaddr("Address:", &ports_eth_addr[portid]);
 		printf("\n");	
