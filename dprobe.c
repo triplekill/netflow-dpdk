@@ -40,6 +40,7 @@
 #include <getopt.h>
 
 #include <rte_common.h> 
+#include <rte_byteorder.h>
 #include <rte_memory.h>
 #include <rte_memzone.h>
 #include <rte_launch.h>
@@ -49,6 +50,7 @@
 #include <rte_lcore.h>
 #include <rte_debug.h>
 #include <rte_ethdev.h> 
+#include <rte_ip.h>
 #include "dprobe.h"
 
 /*
@@ -147,14 +149,41 @@ static const struct rte_eth_txconf tx_conf = {
 /* ethernet addresses ports */
 static struct ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
 static struct rte_mempool * pktmbuf_pool;
+static void
+ipv4_addr_to_dot(uint32_t be_ipv4_addr, char *buf)
+{
+    uint32_t ipv4_addr;
+
+    ipv4_addr = rte_be_to_cpu_32(be_ipv4_addr);
+    sprintf(buf, "%d.%d.%d.%d", (ipv4_addr >> 24) & 0xFF,
+        (ipv4_addr >> 16) & 0xFF, (ipv4_addr >> 8) & 0xFF,
+        ipv4_addr & 0xFF);
+}
+
+
+static void
+ipv4_addr_dump(const char *what, uint32_t be_ipv4_addr)
+{
+    char buf[16];
+
+    ipv4_addr_to_dot(be_ipv4_addr, buf);
+    if (what)
+        printf("%s", what);
+    printf("%s", buf);
+}
+
+
 
 static void
 netflow_collect(struct rte_mbuf *m)
 {
-    struct ether_hdr *eth;
-
-    eth = rte_pktmbuf_mtod(m, struct ether_hdr *);
-    printf ("%d\n", eth->d_addr.addr_bytes[0]);
+    //struct ether_hdr *eth_hdr;
+    struct ipv4_hdr *ipv4_hdr;
+    //eth_hdr = rte_pktmbuf_mtod(m, struct ether_hdr *);
+    ipv4_hdr = (struct ipv4_hdr *)(rte_pktmbuf_mtod(m, unsigned char *) + sizeof(struct ether_hdr));
+    ipv4_addr_dump("IPv4:src=", ipv4_hdr->src_addr);
+    ipv4_addr_dump("IPv4:dst=", ipv4_hdr->dst_addr);
+    printf("\n");
     rte_pktmbuf_free(m);
 }
 
