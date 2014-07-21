@@ -83,6 +83,34 @@ static uint16_t nb_txd = RTE_TEST_TX_DESC_DEFAULT;
 #define TX_HTHRESH 0  /**< Default values of TX host threshold reg. */
 #define TX_WTHRESH 0  /**< Default values of TX write-back threshold reg. */
 
+#define MAX_RX_QUEUE_PER_LCORE 16
+#define MAX_TX_QUEUE_PER_PORT RTE_MAX_ETHPORTS
+#define MAX_RX_QUEUE_PER_PORT 128
+
+#define MAX_LCORE_PARAMS 1024
+struct lcore_params {
+    uint8_t port_id;
+    uint8_t queue_id;
+    uint8_t lcore_id;
+} __rte_cache_aligned;
+
+//static struct lcore_params lcore_params_array[MAX_LCORE_PARAMS];
+static struct lcore_params lcore_params_array_default[] = {
+    {0, 0, 2},
+    {0, 1, 2},
+    {0, 2, 2},
+    {1, 0, 2},
+    {1, 1, 2},
+    {1, 2, 2},
+    {2, 0, 2},
+    {3, 0, 3},
+    {3, 1, 3},
+};
+
+static struct lcore_params * lcore_params = lcore_params_array_default;
+static uint16_t nb_lcore_params = sizeof(lcore_params_array_default) /
+                sizeof(lcore_params_array_default[0]);
+
 
 static const struct rte_eth_conf port_conf = {
 	.rxmode = {
@@ -97,6 +125,7 @@ static const struct rte_eth_conf port_conf = {
 		.mq_mode = ETH_MQ_TX_NONE,
 	},
 };
+
 
 static const struct rte_eth_rxconf rx_conf = {
 	.rx_thresh = {
@@ -119,25 +148,45 @@ static const struct rte_eth_txconf tx_conf = {
 static struct ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
 static struct rte_mempool * pktmbuf_pool;
 
+static void
+netflow_collect(struct rte_mbuf *m)
+{
+    struct ether_hdr *eth;
+
+    eth = rte_pktmbuf_mtod(m, struct ether_hdr *);
+    printf ("%d\n", eth->d_addr.addr_bytes[0]);
+    rte_pktmbuf_free(m);
+}
 
 static int
 lcore_probe(__attribute__((unused)) void *arg)
 {
-        unsigned lcore_id;
+    unsigned lcore_id;
 	unsigned portid, nb_rx;
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
-	
-        lcore_id = rte_lcore_id();
-        printf("hello from core %u\n", lcore_id);
+    struct rte_mbuf *m;
+    unsigned j;
+    unsigned long count;	
+    lcore_id = rte_lcore_id();
+    printf("netflow-DPDK from core %u\n", lcore_id);
+
+    
+    /*
+     * Read packet from RX queues
+     */
+    count = 0;
 	while (1) {
 		portid = 0;
 		nb_rx = rte_eth_rx_burst((uint8_t)portid, 0, pkts_burst, MAX_PKT_BURST);
-		if (nb_rx > 0) {
-			printf("# of rx: %d, port id:%d\n", nb_rx, portid);
-		}
+        count = count + nb_rx;
+	    for ( j = 0; j < nb_rx; j++) {
+            m = pkts_burst[j];
+            rte_prefetch0(rte_pktmbuf_mtod(m, void *));
+            netflow_collect(m);
+            printf("[lcore ID:%d] %lu\n", lcore_id, count);
+        }
 	}
-	
-        return 0;
+    return 0;
 }
 
 
@@ -168,6 +217,20 @@ print_ethaddr(const char *name, const struct ether_addr *eth_addr)
 		eth_addr->addr_bytes[3],
 		eth_addr->addr_bytes[4],
 		eth_addr->addr_bytes[5]);
+}
+
+static uint8_t
+get_port_n_rx_queues(const uint8_t port)
+{
+    int queue = -1;
+    uint16_t i;
+
+    printf("## SON : nb_lcore_params:%d\n", nb_lcore_params);
+    for (i = 0; i < nb_lcore_params; ++i) {
+        if (lcore_params[i].port_id == port && lcore_params[i].queue_id > queue)
+            queue = lcore_params[i].queue_id;
+    }
+    return (uint8_t)(++queue);
 }
 
 
@@ -234,14 +297,14 @@ parse_args(int argc, char **argv)
 int
 MAIN(int argc, char **argv)
 {
-        int ret;
-        unsigned lcore_id;
+    int ret;
+    unsigned lcore_id;
 	unsigned nb_ports;
-	uint8_t portid;
+	uint8_t portid, nb_rx_queue;
  
-        ret = rte_eal_init(argc, argv);
-        if (ret < 0)
-                rte_exit(EXIT_FAILURE, "Invalid EAL argument\n");
+    ret = rte_eal_init(argc, argv);
+    if (ret < 0)
+        rte_exit(EXIT_FAILURE, "Invalid EAL argument\n");
 
 	argc -= ret;
 	argv += ret;
@@ -260,11 +323,11 @@ MAIN(int argc, char **argv)
 					rte_pktmbuf_init, NULL,
 					0, 0);
 	/* init driver */
-	if (rte_pmd_init_all() < 0)
-		rte_exit(EXIT_FAILURE, "Cannot init pmd\n");
-
-	if (rte_eal_pci_probe() < 0)
-		rte_exit(EXIT_FAILURE, "Cannnot probe PCI\n");
+//	if (rte_pmd_init_all() < 0)
+//		rte_exit(EXIT_FAILURE, "Cannot init pmd\n");
+//
+//	if (rte_eal_pci_probe() < 0)
+//		rte_exit(EXIT_FAILURE, "Cannnot probe PCI\n");
 	
 	nb_ports = rte_eth_dev_count();
 	if (nb_ports > RTE_MAX_ETHPORTS)
@@ -278,6 +341,9 @@ MAIN(int argc, char **argv)
 			printf("Skipping disabled port %d\n", portid);
 			continue;
 		}
+        nb_rx_queue = get_port_n_rx_queues(portid);
+        printf("Creating Queues: nb_rxq=%d", nb_rx_queue);
+
 		/* init RX Queue */
 		rte_eth_dev_configure(portid, 1, 1, &port_conf);
 		printf("Queue setup:%d\n", portid);

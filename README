@@ -1,22 +1,27 @@
+= Changelog =
+
 = DPDK Basic =
 Before using DPDK, you need to load DPDK kernel modules (uio, igb_uio).
 Commands:
  modprobe uio
- insmod ${DPDK}/x86_64-default-linuxapp-gcc/kmod/igb_uio.ko
+ insmod ${DPDK}/x86_64-native-linuxapp-gcc/kmod/igb_uio.ko
 
 After load uio, igb_uio, unbind network device driver from ixgbe to igb_uio.
 commands(if you want to unbind interface card p2p1):
-python ${DPDK}/tools/igb_uio_bind.py --bind=igb_uio p2p1
+python ${DPDK}/tools/dpdk_nic_bind.py --bind=igb_uio p2p1
 
 = Build =
 export RTE_SDK=<DPDK SDK path>
-export RTE_TARGET=x86_64-default-linuxapp-gcc
+export RTE_TARGET=x86_64-native-linuxapp-gcc
 
 make
 
 = Run =
-dprobe -c 0x3 -n 2 -- -p 0x1
+ex) 1 lcore
+dprobe -c 0x1 -n 1 -- -p 0x1
 
+ex) 2 lcore
+dprobe -c 0x3 -n 2 -- -p 0x1
 
 = Reference =
 * DPDK build : http://sunshout.tistory.com/1556
