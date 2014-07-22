@@ -1,0 +1,17 @@
+#!/bin/bash
+
+modprobe uio
+
+DPDK=/root/dpdk
+
+echo "Insert new igb_uio.ko"
+insmod $DPDK/x86_64-native-linuxapp-gcc/kmod/igb_uio.ko
+
+$DPDK/tools/dpdk_nic_bind.py --status
+
+echo "Bind which interface?"
+read ifname
+
+$DPDK/tools/dpdk_nic_bind.py --bind=igb_uio $ifname
+$DPDK/tools/dpdk_nic_bind.py --status
+
