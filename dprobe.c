@@ -51,6 +51,9 @@
 #include <rte_debug.h>
 #include <rte_ethdev.h> 
 #include <rte_ip.h>
+#include <rte_tcp.h>
+#include <rte_udp.h>
+#include <rte_hash_crc.h>
 #include "dprobe.h"
 
 /*
@@ -149,6 +152,18 @@ static const struct rte_eth_txconf tx_conf = {
 /* ethernet addresses ports */
 static struct ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
 static struct rte_mempool * pktmbuf_pool;
+
+
+
+static void
+print_ipv4_5_tuple(struct ipv4_5tuple *flow) {
+    ipv4_addr_dump(NULL, flow->ip_src);
+    printf(" %d ", rte_be_to_cpu_16(flow->port_src));
+    printf("-(%d)->", flow->proto); 
+    printf(" %d ", rte_be_to_cpu_16(flow->port_dst));
+    ipv4_addr_dump(NULL, flow->ip_dst);
+}
+
 static void
 ipv4_addr_to_dot(uint32_t be_ipv4_addr, char *buf)
 {
@@ -172,18 +187,112 @@ ipv4_addr_dump(const char *what, uint32_t be_ipv4_addr)
     printf("%s", buf);
 }
 
+static inline uint32_t
+ipv4_hash_crc(void *data, __rte_unused uint32_t data_len,
+    uint32_t init_val)
+{
+    struct ipv4_5tuple *k;
+    uint32_t t;
+    const uint32_t *p;
 
+    k = data;
+    t = k->proto;
+    p = (const uint32_t *)&k->port_src;
+
+#ifdef RTE_MACHINE_CPUFLAG_SSE4_2
+    init_val = rte_hash_crc_4byte(t, init_val);
+    init_val = rte_hash_crc_4byte(k->ip_src, init_val);
+    init_val = rte_hash_crc_4byte(k->ip_dst, init_val);
+    init_val = rte_hash_crc_4byte(*p, init_val);
+#else /* RTE_MACHINE_CPUFLAG_SSE4_2 */
+    init_val = rte_jhash_1word(t, init_val);
+    init_val = rte_jhash_1word(k->ip_src, init_val);
+    init_val = rte_jhash_1word(k->ip_dst, init_val);
+    init_val = rte_jhash_1word(*p, init_val);
+#endif /* RTE_MACHINE_CPUFLAG_SSE4_2 */
+    return (init_val);
+}
 
 static void
 netflow_collect(struct rte_mbuf *m)
 {
-    //struct ether_hdr *eth_hdr;
+    struct ether_hdr *eth_hdr;
     struct ipv4_hdr *ipv4_hdr;
-    //eth_hdr = rte_pktmbuf_mtod(m, struct ether_hdr *);
-    ipv4_hdr = (struct ipv4_hdr *)(rte_pktmbuf_mtod(m, unsigned char *) + sizeof(struct ether_hdr));
-    ipv4_addr_dump("IPv4:src=", ipv4_hdr->src_addr);
-    ipv4_addr_dump("IPv4:dst=", ipv4_hdr->dst_addr);
+    struct udp_hdr  *udp_hdr;
+    struct tcp_hdr  *tcp_hdr;
+    struct ipv4_5tuple *flow;
+
+    uint32_t flow_hash;
+    uint16_t l4_proto;
+    uint16_t eth_type;
+    //uint16_t ol_flags;
+    uint16_t pkt_ol_flags;
+    uint8_t l2_len;
+    uint8_t l3_len;
+
+    /*
+     * Try to figure out ether type
+     */
+    l2_len = sizeof(struct ether_hdr);
+    pkt_ol_flags = m->ol_flags;
+    //ol_flags = (uint16_t) (pkt_ol_flags & (~PKT_TX_L4_MASK));
+
+    eth_hdr = rte_pktmbuf_mtod(m, struct ether_hdr *);
+    eth_type = rte_be_to_cpu_16(eth_hdr->ether_type);
+
+    if (eth_type == ETHER_TYPE_VLAN) {
+        /* TODO: Only allow single VLAN label here */
+        l2_len += sizeof(struct vlan_hdr);
+    }
+    /*
+     * Try to figure out L3 packet type
+     */
+    if ((pkt_ol_flags & (PKT_RX_IPV4_HDR | PKT_RX_IPV4_HDR_EXT |
+            PKT_RX_IPV6_HDR | PKT_RX_IPV6_HDR_EXT)) == 0) {
+        if (eth_type == ETHER_TYPE_IPv4)
+            pkt_ol_flags |= PKT_RX_IPV4_HDR;
+        else if (eth_type == ETHER_TYPE_IPv6)
+            pkt_ol_flags |= PKT_RX_IPV6_HDR;
+    }
+
+    /*
+     * Simplify the protocol parsing
+     * Assuming the incoming packets format as
+     *      Ethernet2 + optional single VLAN
+     *      + ipv4 or ipv6
+     *      + udp or tcp or sctp or others
+     *
+     * flow is saved as network order
+     */
+    flow = malloc(sizeof(struct ipv4_5tuple));
+
+    if (pkt_ol_flags & PKT_RX_IPV4_HDR) {
+        l3_len = sizeof(struct ipv4_hdr);
+        ipv4_hdr = (struct ipv4_hdr *)(rte_pktmbuf_mtod(m, unsigned char *) + l2_len);
+        l4_proto = ipv4_hdr->next_proto_id;
+        flow->ip_src = ipv4_hdr->src_addr;
+        flow->ip_dst = ipv4_hdr->dst_addr;
+        flow->proto  = l4_proto;
+
+        /* UDP Packet */
+        if (l4_proto == IPPROTO_UDP) {
+            udp_hdr = (struct udp_hdr*)(rte_pktmbuf_mtod(m, unsigned char *) + l2_len + l3_len);
+            flow->port_src = udp_hdr->src_port;
+            flow->port_dst = udp_hdr->dst_port;
+        }
+        /* TCP Packet */
+        else if (l4_proto == IPPROTO_TCP) {
+            tcp_hdr = (struct tcp_hdr*)(rte_pktmbuf_mtod(m, unsigned char *) + l2_len + l3_len);
+            flow->port_src = tcp_hdr->src_port;
+            flow->port_dst = tcp_hdr->dst_port;
+        }
+
+    }
+    flow_hash = ipv4_hash_crc(flow, 0, 0);
+    printf("hash:%u ", flow_hash);
+    print_ipv4_5_tuple(flow);
     printf("\n");
+    free(flow);
     rte_pktmbuf_free(m);
 }
 

@@ -45,6 +45,6 @@ APP = dprobe
 SRCS-y := dprobe.c
 
 CFLAGS += -O3
-CFLAGS += $(WERROR_FLAGS)
+#CFLAGS += $(WERROR_FLAGS)
 
 include $(RTE_SDK)/mk/rte.extapp.mk
