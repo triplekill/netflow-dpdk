@@ -40,6 +40,7 @@
 #include <sys/queue.h>
 #include <getopt.h>
 #include <signal.h>
+#include <time.h>
 
 #include <rte_common.h> 
 #include <rte_byteorder.h>
@@ -59,7 +60,7 @@
 #include <rte_ring.h>
 #include <rte_log.h>
 #include <rte_debug.h>
-
+#include <rte_cycles.h>
 #include <cmdline_rdline.h>
 #include <cmdline_parse.h>
 #include <cmdline_socket.h>
@@ -175,9 +176,10 @@ static struct rte_mempool * pktmbuf_pool;
  * used in pairs 
  */
 struct port_stats{
-    unsigned rx;
-    unsigned tx;
-    unsigned drop;
+    unsigned rx_packets;
+    unsigned long rx_bytes;
+    time_t start;
+    time_t end;
 } __attribute__((aligned(CACHE_LINE_SIZE / 2)));
 
 static struct port_stats pstats[RTE_MAX_ETHPORTS];
@@ -193,6 +195,14 @@ const unsigned string_size = 64;
 struct rte_ring *send_ring, *recv_ring;
 struct rte_mempool *message_pool;
 volatile int quit = 0;
+
+static void
+reset_stat(unsigned portid) {
+    pstats[portid].rx_packets = 0;
+    pstats[portid].rx_bytes = 0;
+    pstats[portid].start = clock();
+    pstats[portid].end = clock();
+}
 
 static void
 print_ipv4_5_tuple(struct ipv4_5tuple *flow) {
@@ -253,7 +263,7 @@ ipv4_hash_crc(void *data, __rte_unused uint32_t data_len,
 }
 
 static void
-netflow_collect(struct rte_mbuf *m)
+netflow_collect(struct rte_mbuf *m, unsigned portid)
 {
     struct ether_hdr *eth_hdr;
     struct ipv4_hdr *ipv4_hdr;
@@ -288,8 +298,9 @@ netflow_collect(struct rte_mbuf *m)
      */
     if ((pkt_ol_flags & (PKT_RX_IPV4_HDR | PKT_RX_IPV4_HDR_EXT |
             PKT_RX_IPV6_HDR | PKT_RX_IPV6_HDR_EXT)) == 0) {
-        if (eth_type == ETHER_TYPE_IPv4)
+        if (eth_type == ETHER_TYPE_IPv4) {
             pkt_ol_flags |= PKT_RX_IPV4_HDR;
+         }
         else if (eth_type == ETHER_TYPE_IPv6)
             pkt_ol_flags |= PKT_RX_IPV6_HDR;
     }
@@ -305,6 +316,10 @@ netflow_collect(struct rte_mbuf *m)
      */
     flow = malloc(sizeof(struct ipv4_5tuple));
 
+
+    /* update Statistics */
+    pstats[portid].rx_packets += 1;
+ 
     if (pkt_ol_flags & PKT_RX_IPV4_HDR) {
         l3_len = sizeof(struct ipv4_hdr);
         ipv4_hdr = (struct ipv4_hdr *)(rte_pktmbuf_mtod(m, unsigned char *) + l2_len);
@@ -312,6 +327,7 @@ netflow_collect(struct rte_mbuf *m)
         flow->ip_src = ipv4_hdr->src_addr;
         flow->ip_dst = ipv4_hdr->dst_addr;
         flow->proto  = l4_proto;
+        pstats[portid].rx_bytes += rte_be_to_cpu_16(ipv4_hdr->total_length);
 
         /* UDP Packet */
         if (l4_proto == IPPROTO_UDP) {
@@ -341,12 +357,26 @@ print_stats(int signum)
 {
     unsigned i;
     unsigned num_ports=1;
+    double diff_sec, pps,bandwidth;
+
     printf("\nExiting on signal %d\n\n", signum);
+
+    pstats[0].end = clock();
+
+    printf("##########################################################\n");
+    printf(" Port\tpackets\tKpps\tBytes\tMbps\n");
+    printf("----------------------------------------------------------\n");
     for (i = 0; i < num_ports; i++){
         //const uint8_t p_num = ports[i];
         const uint8_t p_num = i;
-        printf("Port %u: RX - %u, TX - %u, Drop - %u\n", (unsigned)p_num,
-                pstats[p_num].rx, pstats[p_num].tx, pstats[p_num].drop);
+
+        diff_sec = (pstats[0].end - pstats[0].start)/CLOCKS_PER_SEC;
+        pps = ((double)pstats[p_num].rx_packets / diff_sec) / 1000; 
+        bandwidth = ( (double)pstats[p_num].rx_bytes / diff_sec )*8 / 1000000;
+
+        printf(" %u\t%u\t%.lf\t%lu\t%.lf\n", (unsigned)p_num,
+                pstats[p_num].rx_packets, pps, pstats[p_num].rx_bytes,
+                bandwidth);
     }
     exit(0);
 }
@@ -373,12 +403,12 @@ lcore_probe(__attribute__((unused)) void *arg)
 		portid = 0;
         void *msg;
 		nb_rx = rte_eth_rx_burst((uint8_t)portid, 0, pkts_burst, MAX_PKT_BURST);
-        pstats[0].rx += nb_rx;
+        //pstats[portid].rx += nb_rx;
 
         for ( j = 0; j < nb_rx; j++) {
             m = pkts_burst[j];
             rte_prefetch0(rte_pktmbuf_mtod(m, void *));
-            netflow_collect(m);
+            netflow_collect(m, portid);
         }
         /* check cli */
         if (unlikely(rte_ring_dequeue(send_ring, &msg) < 0)) {
@@ -534,6 +564,8 @@ MAIN(int argc, char **argv)
     if (message_pool == NULL)
         rte_exit(EXIT_FAILURE, "Problem getting message pool\n");
 
+    /* init stat */
+    reset_stat(0);
 
 	argc -= ret;
 	argv += ret;
@@ -605,7 +637,7 @@ MAIN(int argc, char **argv)
                 rte_eal_remote_launch(lcore_probe, NULL, lcore_id);
         }
 
-        struct cmdline *cl = cmdline_stdin_new(simple_mp_ctx, "\ncmd > ");
+        struct cmdline *cl = cmdline_stdin_new(simple_mp_ctx, "cmd > ");
         if (cl == NULL)
             rte_exit(EXIT_FAILURE, "Cannot create cmdline instance\n");
         cmdline_interact(cl);
