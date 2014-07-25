@@ -20,6 +20,7 @@ make
 ex) 1 lcore
 dprobe -c 0x1 -n 1 -- -p 0x1
 
+To run, command line interpreter, run 2 threads
 ex) 2 lcore
 dprobe -c 0x3 -n 2 -- -p 0x1
 

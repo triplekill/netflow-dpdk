@@ -36,8 +36,10 @@
 #include <string.h>
 #include <stdint.h>
 #include <errno.h>
+#include <termios.h>
 #include <sys/queue.h>
 #include <getopt.h>
+#include <signal.h>
 
 #include <rte_common.h> 
 #include <rte_byteorder.h>
@@ -54,7 +56,19 @@
 #include <rte_tcp.h>
 #include <rte_udp.h>
 #include <rte_hash_crc.h>
+#include <rte_ring.h>
+#include <rte_log.h>
+#include <rte_debug.h>
+
+#include <cmdline_rdline.h>
+#include <cmdline_parse.h>
+#include <cmdline_socket.h>
+#include <cmdline.h>
+
 #include "dprobe.h"
+#include "mp_commands.h"
+
+//#define RTE_LOGTYPE_APP RTE_LOGTYPE_USER1
 
 /*
  * RX and TX Prefetch, Host, and Write-back threshold values should be
@@ -154,6 +168,31 @@ static struct ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
 static struct rte_mempool * pktmbuf_pool;
 
 
+/*
+ * Statistics
+ *
+ * structure to record the rx and tx packets. Put two per cache line as ports
+ * used in pairs 
+ */
+struct port_stats{
+    unsigned rx;
+    unsigned tx;
+    unsigned drop;
+} __attribute__((aligned(CACHE_LINE_SIZE / 2)));
+
+static struct port_stats pstats[RTE_MAX_ETHPORTS];
+
+/*
+ * command line 
+ */
+static const char *_MSG_POOL = "MSG_POOL";
+static const char *_SEC_2_PRI = "SEC_2_PRI";
+static const char *_PRI_2_SEC = "PRI_2_SEC";
+const unsigned string_size = 64;
+
+struct rte_ring *send_ring, *recv_ring;
+struct rte_mempool *message_pool;
+volatile int quit = 0;
 
 static void
 print_ipv4_5_tuple(struct ipv4_5tuple *flow) {
@@ -289,12 +328,29 @@ netflow_collect(struct rte_mbuf *m)
 
     }
     flow_hash = ipv4_hash_crc(flow, 0, 0);
-    printf("hash:%u ", flow_hash);
-    print_ipv4_5_tuple(flow);
-    printf("\n");
+    //printf("hash:%u ", flow_hash);
+    //print_ipv4_5_tuple(flow);
+    //printf("\n");
     free(flow);
     rte_pktmbuf_free(m);
 }
+
+/* signal handler configured for SIGTERM and SIGINT to print stats on exit */
+static void
+print_stats(int signum)
+{
+    unsigned i;
+    unsigned num_ports=1;
+    printf("\nExiting on signal %d\n\n", signum);
+    for (i = 0; i < num_ports; i++){
+        //const uint8_t p_num = ports[i];
+        const uint8_t p_num = i;
+        printf("Port %u: RX - %u, TX - %u, Drop - %u\n", (unsigned)p_num,
+                pstats[p_num].rx, pstats[p_num].tx, pstats[p_num].drop);
+    }
+    exit(0);
+}
+
 
 static int
 lcore_probe(__attribute__((unused)) void *arg)
@@ -304,7 +360,8 @@ lcore_probe(__attribute__((unused)) void *arg)
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
     struct rte_mbuf *m;
     unsigned j;
-    unsigned long count;	
+    unsigned long count;
+
     lcore_id = rte_lcore_id();
     printf("netflow-DPDK from core %u\n", lcore_id);
 
@@ -312,18 +369,26 @@ lcore_probe(__attribute__((unused)) void *arg)
     /*
      * Read packet from RX queues
      */
-    count = 0;
-	while (1) {
+	while (!quit) {
 		portid = 0;
+        void *msg;
 		nb_rx = rte_eth_rx_burst((uint8_t)portid, 0, pkts_burst, MAX_PKT_BURST);
-        count = count + nb_rx;
-	    for ( j = 0; j < nb_rx; j++) {
+        pstats[0].rx += nb_rx;
+
+        for ( j = 0; j < nb_rx; j++) {
             m = pkts_burst[j];
             rte_prefetch0(rte_pktmbuf_mtod(m, void *));
             netflow_collect(m);
-            printf("[lcore ID:%d] %lu\n", lcore_id, count);
         }
+        /* check cli */
+        if (unlikely(rte_ring_dequeue(send_ring, &msg) < 0)) {
+            continue;
+        }
+        RTE_LOG(INFO, EAL, "[lcore ID:%d] Received '%s'\n", lcore_id, (char *)msg);
+        rte_mempool_put(message_pool, msg);
 	}
+    print_stats(0);
+    RTE_LOG(INFO, EAL, "Finished lcore\n");
     return 0;
 }
 
@@ -439,10 +504,36 @@ MAIN(int argc, char **argv)
     unsigned lcore_id;
 	unsigned nb_ports;
 	uint8_t portid, nb_rx_queue;
+
+    const unsigned flags = 0;
+    const unsigned ring_size = 64;
+    const unsigned pool_size = 1024;
+    const unsigned pool_cache = 32;
+    const unsigned priv_data_sz = 0;
+
+    /* set up signal handlers to print status on exit */
+    signal(SIGINT, print_stats);
+    signal(SIGTERM, print_stats);
  
     ret = rte_eal_init(argc, argv);
     if (ret < 0)
         rte_exit(EXIT_FAILURE, "Invalid EAL argument\n");
+
+    /* init cli */
+    send_ring = rte_ring_create(_PRI_2_SEC, ring_size, rte_socket_id(), flags);
+    recv_ring = rte_ring_create(_SEC_2_PRI, ring_size, rte_socket_id(), flags);
+    message_pool = rte_mempool_create(_MSG_POOL, pool_size,
+            string_size, pool_cache, priv_data_sz,
+            NULL, NULL, NULL, NULL,
+            rte_socket_id(), flags);
+
+    if (send_ring == NULL)
+        rte_exit(EXIT_FAILURE, "Problem getting sending ring\n");
+    if (recv_ring == NULL)
+        rte_exit(EXIT_FAILURE, "Problem getting receiving ring\n");
+    if (message_pool == NULL)
+        rte_exit(EXIT_FAILURE, "Problem getting message pool\n");
+
 
 	argc -= ret;
 	argv += ret;
@@ -513,9 +604,15 @@ MAIN(int argc, char **argv)
         RTE_LCORE_FOREACH_SLAVE(lcore_id) {
                 rte_eal_remote_launch(lcore_probe, NULL, lcore_id);
         }
+
+        struct cmdline *cl = cmdline_stdin_new(simple_mp_ctx, "\ncmd > ");
+        if (cl == NULL)
+            rte_exit(EXIT_FAILURE, "Cannot create cmdline instance\n");
+        cmdline_interact(cl);
+        cmdline_stdin_exit(cl);
  
         /* call it on master lcore too */
-        lcore_probe(NULL);
+        //lcore_probe(NULL);
  
         rte_eal_mp_wait_lcore();
         return 0;
