@@ -43,6 +43,14 @@ print_ipv4(struct ipv4_hdr *ip)
     PRINT_IP(ip->dst_addr);
     printf("\n");
 }
+void
+print_flow(union ipv4_5tuple_host *k)
+{
+    PRINT_IP(k->ip_src);
+    printf(" (%d) -[%d]-> (%d) ", ntohs(k->port_src), k->proto, ntohs(k->port_dst));
+    PRINT_IP(k->ip_dst);
+    printf("\n");
+}
 
 /****************************************************************************
  * 
@@ -51,17 +59,57 @@ void
 process_ipv4(struct rte_mbuf * m, int pid, int vlan)
 {
     port_info_t *info = &probe.info[pid];
+    char proto;
     struct ether_hdr *eth = rte_pktmbuf_mtod(m, struct ether_hdr *);
     struct ipv4_hdr  *ip  = (struct ipv4_hdr *)&eth[1];
-    
+    struct tcp_hdr   *tcp;
+    struct udp_hdr   *udp;
+       
+    union ipv4_5tuple_host k;
+
+    uint32_t init_val;
+ 
     /* Adjust for a vlan header if present */
     if (vlan)
         ip = (struct ipv4_hdr *)((char *)ip + sizeof(struct vlan_hdr));
 
+    k.ip_src = ip->src_addr;
+    k.ip_dst = ip->dst_addr;
+    k.proto  = ip->next_proto_id;
+    k.pad0 = 0;
+    k.pad1 = 0;
+
+    init_val = rte_hash_crc_4byte(k.proto, init_val);
+    init_val = rte_hash_crc_4byte(k.ip_src, init_val);
+    init_val = rte_hash_crc_4byte(k.ip_dst, init_val);
+
     //print_ipv4(ip);
+    // based on proto, TCP/UDP/ICMP...
+    switch(ip->next_proto_id) {
+        case IPPROTO_UDP:
+            udp = (struct udp_hdr *)((unsigned char*)ip + sizeof(struct ipv4_hdr)); 
+            k.port_src = udp->src_port;
+            k.port_dst = udp->dst_port;
+            init_val = rte_hash_crc_4byte(k.port_src, init_val);
+            init_val = rte_hash_crc_4byte(k.port_dst, init_val);
+            break;
+        
+        case IPPROTO_TCP:
+            tcp = (struct tcp_hdr *)((unsigned char*)ip + sizeof(struct ipv4_hdr));
+            k.port_src = tcp->src_port;
+            k.port_dst = tcp->dst_port;
+            init_val = rte_hash_crc_4byte(k.port_src, init_val);
+            init_val = rte_hash_crc_4byte(k.port_dst, init_val);
+            break;
+        
+        default:
+            break;
+    }
+    //print_flow(&k);
     //TODO
     // 1) decode flow header
     // 2) pkt to hash
+    //printf("%" PRIu32 "\n", init_val);
     // 3) process hash table (export flows)
 }
 

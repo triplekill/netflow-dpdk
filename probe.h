@@ -4,9 +4,13 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include <rte_byteorder.h>
 #include <rte_lcore.h>
 #include <rte_ethdev.h>
 #include <rte_ip.h>
+#include <rte_udp.h>
+#include <rte_tcp.h>
+#include <rte_hash_crc.h>
 
 #define NETFLOW_APP_NAME        "Netflow DPDK"
 
@@ -56,6 +60,29 @@ typedef struct probe_s {
     port_info_t             info[RTE_MAX_ETHPORTS];     /**< Port Information                 */
 
 } probe_t;
+
+
+struct ipv4_5tuple {
+        uint32_t ip_dst;
+        uint32_t ip_src;
+        uint16_t port_dst;
+        uint16_t port_src;
+        uint8_t  proto;
+} __attribute__((__packed__));
+
+union ipv4_5tuple_host {
+    struct {
+        uint8_t  pad0;
+        uint8_t  proto;
+        uint16_t pad1;
+        uint32_t ip_src;
+        uint32_t ip_dst;
+        uint16_t port_src;
+        uint16_t port_dst;
+    };
+    __m128i xmm;
+};
+
 
 extern int launch_probe(__attribute__ ((unused)) void * arg);
 
