@@ -7,8 +7,9 @@
 #include <rte_ethdev.h>
 #include <rte_mempool.h>
 #include <rte_mbuf.h>
+#include <rte_hash.h>
 
-#define NB_SOCKETS  8
+#define NB_SOCKETS  2
 #define NB_MBUF     8192
 #define MBUF_SIZE   (2048 + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM)
 
@@ -54,6 +55,9 @@ static const struct rte_eth_txconf tx_conf = {
 
 static struct rte_mempool *pktmbuf_pool[NB_SOCKETS];
 static int numa_on = 1;
+
+typedef struct rte_hash lookup_stuct_t;
+static lookup_stuct_t *netflow_V5_lookup_struct[NB_SOCKETS];
 
 int netflow_init(probe_t *);
 

@@ -1,5 +1,7 @@
 #include "netflow-init.h"
 
+#include "probe.h"
+
 static void
 print_ethaddr(const char *name, const struct ether_addr *eth_addr)
 {
@@ -10,6 +12,46 @@ print_ethaddr(const char *name, const struct ether_addr *eth_addr)
         eth_addr->addr_bytes[3],
         eth_addr->addr_bytes[4],
         eth_addr->addr_bytes[5]);
+}
+
+#define NETFLOW_HASH_ENTRIES 4 * 1024 * 1024
+
+static inline uint32_t
+ipv4_hash_crc(const void *data, __rte_unused uint32_t data_len, uint32_t init_val)
+{
+    const union ipv4_5tuple_host *k;
+    uint32_t t;
+    k = data;
+    init_val = rte_hash_crc_4byte(k->proto, init_val);
+    init_val = rte_hash_crc_4byte(k->ip_src, init_val);
+    init_val = rte_hash_crc_4byte(k->ip_dst, init_val);
+    init_val = rte_hash_crc_4byte(k->port_src, init_val);
+    init_val = rte_hash_crc_4byte(k->port_dst, init_val);
+    return init_val;
+}
+
+static void
+setup_hash(int socketid)
+{
+    struct rte_hash_parameters netflow_V5_hash_params = {
+        .name = NULL,
+        .entries = NETFLOW_HASH_ENTRIES,
+        .bucket_entries = 4,
+        .key_len = sizeof(union ipv4_5tuple_host),
+        .hash_func = ipv4_hash_crc,
+        .hash_func_init_val = 0,
+    };
+
+    char s[64];
+
+    /* create netflow hash */
+    snprintf(s, sizeof(s), "netflow_V5_hash_%d", socketid);
+    netflow_V5_hash_params.name = s;
+    netflow_V5_hash_params.socket_id = socketid;
+    netflow_V5_lookup_struct[socketid] = rte_hash_create(&netflow_V5_hash_params);
+    if(netflow_V5_lookup_struct[socketid] == NULL)
+        rte_exit(EXIT_FAILURE, "Unable to create the netflow hash on socket %d\n", socketid);
+    
 }
 
 int
@@ -86,13 +128,18 @@ netflow_init(probe_t *probe)
 
         rte_eth_promiscuous_enable(pid);
     }
-    
+
+    /* netflow hash table init */
+    setup_hash(0);
+ 
 printf("----------- MEMORY_SEGMENTS -----------\n");
 rte_dump_physmem_layout(stdout);
 printf("--------- END_MEMORY_SEGMENTS ---------\n");
 printf("------------ MEMORY_ZONES -------------\n");
 rte_memzone_dump(stdout);
 printf("---------- END_MEMORY_ZONES -----------\n");
+printf("---------- TAIL_QUEUES ----------------\n");
+rte_dump_tailq(stdout);
  
     return 0;
 }
