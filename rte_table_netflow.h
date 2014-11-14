@@ -19,38 +19,59 @@ extern "C" {
 #include <rte_ip.h>
 #include <rte_udp.h>
 #include <rte_tcp.h>
+#include <rte_spinlock.h>
 
 #include "rte_table.h"
 
-typedef struct rte_table_hashBucket_v5 {
-    uint8_t magic;
-    uint8_t bucket_expired;
-    uint8_t _pad0, _pad1;
+#define MAX_ENTRY       2 * 1024 * 1024
 
-    uint32_t srcaddr;
-    uint32_t dstaddr;
-    uint32_t nexthop;
-    uint16_t input;                 /**< SNMP index of input interface                                  */
-    uint16_t output;                /**< SNMP index of output interface                                 */
-    uint32_t dPkts;                 /**< Packets in the flow                                            */
-    uint32_t dOctets;               /**< Total number of Layer 3 bytes in the packets of the flow       */
-    uint32_t first;                 /**< SysUptime at start of flow                                     */
-    uint32_t last;                  /**< SysUptime at the time the last packet of the flow was received */
-    uint16_t srcport;               /**< TCP/UDP source port number or equivalent                       */
-    uint16_t dstport;               /**< TCP/UDP destination port number or equivalent                  */
-    uint8_t  pad1;                  /**< Unused (zero) bytes                                            */
-    uint8_t  tcp_flags;             /**< Cumulative OR of TCP flags                                     */
-    uint8_t  prot;                  /**< IP protocol type                                               */
-    uint8_t  tos;                   /**< IP type of service (TOS)                                       */
-    uint16_t src_as;                /**< Autonomous system number of the source, either orgin or peer   */
-    uint16_t dst_as;                /**< Autonomous system number of the destination, either or peer    */
-    uint8_t  src_mask;              /**< Source address prefix mask bits                                */
-    uint8_t  dst_mask;              /**< Dstination address prefix mask bits                            */
-    uint16_t pad2;                  /**< Unused (zero) bytes                              (4+48 Bytes)  */
+/* ***************************************** */
 
-    struct rte_table_hashBucket_v5 *next;
-} hashBucket_v5;
- 
+#define FLOW_VERSION_5       5
+#define V5FLOWS_PER_PAK     30
+
+struct flow_ver5_hdr {
+  u_int16_t version;         /* Current version=5*/
+  u_int16_t count;           /* The number of records in PDU. */
+  u_int32_t sysUptime;       /* Current time in msecs since router booted */
+  u_int32_t unix_secs;       /* Current seconds since 0000 UTC 1970 */
+  u_int32_t unix_nsecs;      /* Residual nanoseconds since 0000 UTC 1970 */
+  u_int32_t flow_sequence;   /* Sequence number of total flows seen */
+  u_int8_t  engine_type;     /* Type of flow switching engine (RP,VIP,etc.)*/
+  u_int8_t  engine_id;       /* Slot number of the flow switching engine */
+  u_int16_t sampleRate;      /* Packet capture sample rate */
+};
+
+struct flow_ver5_rec {
+  u_int32_t srcaddr;    /* Source IP Address */
+  u_int32_t dstaddr;    /* Destination IP Address */
+  u_int32_t nexthop;    /* Next hop router's IP Address */
+  u_int16_t input;      /* Input interface index */
+  u_int16_t output;     /* Output interface index */
+  u_int32_t dPkts;      /* Packets sent in Duration (milliseconds between 1st
+               & last packet in this flow)*/
+  u_int32_t dOctets;    /* Octets sent in Duration (milliseconds between 1st
+               & last packet in  this flow)*/
+  u_int32_t first;      /* SysUptime at start of flow */
+  u_int32_t last;       /* and of last packet of the flow */
+  u_int16_t srcport;    /* TCP/UDP source port number (.e.g, FTP, Telnet, etc.,or equivalent) */
+  u_int16_t dstport;    /* TCP/UDP destination port number (.e.g, FTP, Telnet, etc.,or equivalent) */
+  u_int8_t pad1;        /* pad to word boundary */
+  u_int8_t tcp_flags;   /* Cumulative OR of tcp flags */
+  u_int8_t proto;        /* IP protocol, e.g., 6=TCP, 17=UDP, etc... */
+  u_int8_t tos;         /* IP Type-of-Service */
+  u_int16_t src_as;     /* source peer/origin Autonomous System */
+  u_int16_t dst_as;     /* dst peer/origin Autonomous System */
+  u_int8_t src_mask;    /* source route's mask bits */
+  u_int8_t dst_mask;    /* destination route's mask bits */
+  u_int16_t pad2;       /* pad to word boundary */
+};
+
+typedef struct single_flow_ver5_rec {
+  struct flow_ver5_hdr flowHeader;
+  struct flow_ver5_rec flowRecord[V5FLOWS_PER_PAK+1 /* safe against buffer overflows */];
+} NetFlow5Record;
+
 typedef struct rte_table_hashBucket {
     uint8_t magic;                                  /**< magic code for validation */
     uint8_t bucket_expired;                         /**< force bucket to expire */
@@ -113,18 +134,16 @@ struct rte_table_netflow_params {
 
 };
 
-
 struct rte_table_netflow {
     /* Input parameters */
     uint32_t entry_size;
     uint32_t n_entries;
-    uint32_t offset;
 
     rte_table_netflow_op_hash f_hash;
     uint64_t seed;
 
-    /* Internal fields */
-    uint32_t entry_pos_mask;
+    /* Spinlock for entry */
+    rte_spinlock_t lock[MAX_ENTRY];
 
     /* Internal table */
     hashBucket_t *array[0] __rte_cache_aligned;

@@ -21,11 +21,15 @@ rte_table_netflow_create(void *params, int socket_id, uint32_t entry_size)
     uint32_t total_cl_size, total_size;
     uint32_t i;
 
+    if (p->n_entries > MAX_ENTRY) {
+        RTE_LOG(ERR, TABLE, "Entry is large than MAX_ENTRY(%d)\n", (uint32_t)MAX_ENTRY);
+        p->n_entries = MAX_ENTRY;
+    }
+
     /* Check input parameters */
     if ((p == NULL) ||
         (p->n_entries == 0) ||
-        (!rte_is_power_of_2(p->n_entries)) ||
-        ((p->offset &0x3)  != 0) ) {
+        (!rte_is_power_of_2(p->n_entries)) ) {
         return NULL;
     }
 
@@ -43,11 +47,14 @@ rte_table_netflow_create(void *params, int socket_id, uint32_t entry_size)
         return NULL;
     }
 
+    /* Spinlock initialization */
+    for (i = 0; i < p->n_entries; i++) {
+        rte_spinlock_init(&t->lock[i]);
+    }
+
     /* Memory initialzation */
     t->entry_size = entry_size;
     t->n_entries = p->n_entries;
-    t->offset = p->offset;
-    t->entry_pos_mask = t->n_entries - 1;
     t->f_hash = p->f_hash;
     t->seed = p->seed;
 
@@ -81,11 +88,17 @@ rte_table_netflow_entry_add(
     idx = rte_hash_crc_4byte(k->port_src, idx);
     idx = rte_hash_crc_4byte(k->port_dst, idx);
     idx = idx % t->n_entries;
-    //idx = (k->proto + k->ip_src + k->ip_dst + k->port_src + k->port_dst) % t->n_entries;
+    
+    /****************************************************************
+     * Lock one entry (t->array[idx]'s lock = t->lock[idex]
+     *
+     * So netflow_export can use other entries 
+     ****************************************************************/
+    rte_spinlock_lock(&t->lock[idx]);
+ 
     bucket = t->array[idx];
     previous_pointer = bucket;
     
-    /* TODO: need lock on this entry */
     while (bucket != NULL) {
         /* Find same flow in the bucket's list */
         if ((bucket->ip_src == k->ip_src) && (bucket->ip_dst == k->ip_dst) ) {
@@ -154,7 +167,12 @@ rte_table_netflow_entry_add(
         if (notfound) previous_pointer->next = bkt;
         else t->array[idx] = bkt;
     }
-   
+    
+    rte_spinlock_unlock(&t->lock[idx]);
+    /***********************************************************************
+     * End of entry lock
+     * release lock
+     **********************************************************************/
     return 1;
 }
 static int
