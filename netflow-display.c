@@ -12,6 +12,7 @@ netflow_logo(int row, int col,   const char * appname)
 {
     int i;
     static const char * logo[] = {
+        "",
         "#     #  #####  #######  ######  #         ####    #       #       #",
         "##    #  #         #     #       #        #    #    #     # #     #",  
         "# #   #  #         #     #       #       #      #   #     # #     #",

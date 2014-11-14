@@ -8,6 +8,7 @@
 #include <rte_mempool.h>
 #include <rte_mbuf.h>
 #include <rte_hash.h>
+#include <rte_hash_crc.h>
 
 #define NB_SOCKETS  2
 #define NB_MBUF     8192

@@ -12,6 +12,8 @@
 #include <rte_tcp.h>
 #include <rte_hash_crc.h>
 
+#include "rte_table_netflow.h"
+
 #define NETFLOW_APP_NAME        "Netflow DPDK"
 
 #define MAX_PKT_BURST   16
@@ -44,6 +46,10 @@ typedef struct port_info_s {
     struct rte_eth_link     link;                   /**< Link information link speed and duplex */
 } port_info_t;
 
+//##### Temp #####
+#define _RTE_MAX_ETHPORTS 2
+#define _NB_SOCKETS 2
+
 typedef struct probe_s {
     //struct cmdline        *cli;
     char*                   *hostname;              /* hostname */
@@ -57,31 +63,13 @@ typedef struct probe_s {
     //l2p_t                   *l2p;
 
     /* Statistics */
-    port_info_t             info[RTE_MAX_ETHPORTS];     /**< Port Information                 */
+    port_info_t             info[_RTE_MAX_ETHPORTS];     /**< Port Information                 */
+
+    /* hash table */
+    //struct rte_table_netflow my_table[2];
+    struct rte_table_netflow *table[2][2];
 
 } probe_t;
-
-
-struct ipv4_5tuple {
-        uint32_t ip_dst;
-        uint32_t ip_src;
-        uint16_t port_dst;
-        uint16_t port_src;
-        uint8_t  proto;
-} __attribute__((__packed__));
-
-union ipv4_5tuple_host {
-    struct {
-        uint8_t  pad0;
-        uint8_t  proto;
-        uint16_t pad1;
-        uint32_t ip_src;
-        uint32_t ip_dst;
-        uint16_t port_src;
-        uint16_t port_dst;
-    };
-    __m128i xmm;
-};
 
 
 extern int launch_probe(__attribute__ ((unused)) void * arg);

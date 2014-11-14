@@ -43,7 +43,8 @@ APP = netflow
 
 # all source are stored in SRCS-y
 SRCS-y := netflow-main.c \
-        netflow-display.c netflow-init.c probe.c
+        netflow-display.c netflow-init.c probe.c rte_table_netflow.c \
+        netflow-export.c
 
 CFLAGS += -O3 -g
 #CFLAGS += $(WERROR_FLAGS)

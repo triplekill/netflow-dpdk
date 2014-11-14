@@ -36,6 +36,7 @@
 #include "probe.h"
 #include "netflow-display.h"
 #include "netflow-init.h"
+#include "netflow-export.h"
 
 #include <signal.h>
 
@@ -149,6 +150,8 @@ int main(int argc, char **argv)
     rte_delay_ms(5000);     // wait for the lcores to start up
 
     // Wait for all of the cores to stop runing and exit.
+
+    process_hashtable();
     rte_eal_mp_wait_lcore(); 
 
     return 0;
