@@ -17,6 +17,7 @@ static struct timeval actTime;
 
 uint8_t engineType, engineId;
 uint16_t sampleRate;
+uint32_t flow_sequence;
 
 NetFlow5Record theV5Flow;
 
@@ -103,6 +104,7 @@ static void sendNetflowV5()
     int msg_length;
     uint16_t record_count;
 
+    theV5Flow.flowHeader.flow_sequence = rte_cpu_to_be_32(flow_sequence++);
     record_count = rte_cpu_to_le_16(theV5Flow.flowHeader.count);
     printf("record count:%d\n", record_count);
     msg_length = sizeof(struct flow_ver5_hdr) + record_count * sizeof(struct flow_ver5_rec);
