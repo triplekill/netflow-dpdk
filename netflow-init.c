@@ -113,6 +113,14 @@ netflow_init(probe_t *probe)
 
     /* netflow hash table init */
     setup_netflow_table(probe);
+
+    /* setup netflow collector information */
+    probe->collector.sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    bzero(&probe->collector.servaddr, sizeof(probe->collector.servaddr));
+    probe->collector.servaddr.sin_family = AF_INET;
+    probe->collector.servaddr.sin_addr.s_addr = inet_addr("192.168.122.1");
+    probe->collector.servaddr.sin_port = rte_cpu_to_be_16(2055);
+
  
 printf("----------- MEMORY_SEGMENTS -----------\n");
 rte_dump_physmem_layout(stdout);

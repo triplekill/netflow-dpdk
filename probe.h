@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <sys/socket.h>
 
 #include <rte_byteorder.h>
 #include <rte_lcore.h>
@@ -13,6 +14,7 @@
 #include <rte_hash_crc.h>
 
 #include "rte_table_netflow.h"
+#include "in.h"
 
 #define NETFLOW_APP_NAME        "Netflow DPDK"
 
@@ -50,6 +52,14 @@ typedef struct port_info_s {
 #define _RTE_MAX_ETHPORTS 2
 #define _NB_SOCKETS 2
 
+/* Netflow Collector information */
+typedef struct collector_s {
+    char* addr;
+    int port;
+    int sockfd;
+    struct sockaddr_in servaddr;
+} collector_t;
+
 typedef struct probe_s {
     //struct cmdline        *cli;
     char*                   *hostname;              /* hostname */
@@ -58,6 +68,9 @@ typedef struct probe_s {
     uint16_t                nb_txd;
     uint16_t                portNum;
     struct ether_addr       ports_eth_addr[RTE_MAX_ETHPORTS];
+
+    // Netflow collector
+    collector_t collector;
 
     // port to lcore mapping
     //l2p_t                   *l2p;

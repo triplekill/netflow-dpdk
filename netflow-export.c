@@ -1,5 +1,6 @@
 #include <unistd.h>
 #include <time.h>
+#include <sys/socket.h>
 
 #include "probe.h"
 #include "rte_table_netflow.h"
@@ -75,7 +76,7 @@ static int exportBucketToNetflowV5(hashBucket_t* bkt, uint8_t numFlows)
 
 hashBucket_t* makeNetFlowV5(hashBucket_t *list)
 {
-    int8_t num_flows = 1;
+    uint16_t num_flows = 1;
     hashBucket_t *temp;
 
     /* Make header */
@@ -83,56 +84,73 @@ hashBucket_t* makeNetFlowV5(hashBucket_t *list)
     /* Make Records */
     while(list != NULL) {
         temp = list;
-        exportBucketToNetflowV5(list, num_flows);
+        printf("num_flows:%d\n", num_flows);
+        exportBucketToNetflowV5(list, num_flows - 1);
         list = list->next;
         rte_free(temp);
+        printf("free - 1\n");
         num_flows++;
         if(num_flows > V5FLOWS_PER_PAK) break;
     }
-    theV5Flow.flowHeader.count = --num_flows;
+    num_flows--;
+    printf("num_flows2:%d\n", num_flows);
+    theV5Flow.flowHeader.count = rte_cpu_to_be_16(num_flows);
     return list; 
 }
 
-void sendNetflowV5()
+static void sendNetflowV5()
 {
-    printf("count:%d\n", theV5Flow.flowHeader.count);
+    int msg_length;
+    uint16_t record_count;
+
+    record_count = rte_cpu_to_le_16(theV5Flow.flowHeader.count);
+    printf("record count:%d\n", record_count);
+    msg_length = sizeof(struct flow_ver5_hdr) + record_count * sizeof(struct flow_ver5_rec);
+    sendto(probe.collector.sockfd, (void *)&theV5Flow, msg_length, 0, (struct sockaddr *)&probe.collector.servaddr, sizeof(probe.collector.servaddr));
+ 
 }
 
-static void make_export(hashBucket_t *export_list)
+static hashBucket_t* make_export(hashBucket_t *export_list)
 {
     hashBucket_t *next;
     uint32_t count = 0;
     gettimeofday(&actTime, NULL);
-    
+   
     if (5) {
         while (export_list != NULL) {
             export_list = makeNetFlowV5(export_list);
             sendNetflowV5();
         }
     }
+    printf("should be NULL(export_list:%p)\n", export_list);
+    return export_list;
 }
-#define IDLE_TIMEOUT 60
-#define LIFETIME_TIMEOUT 120
+#define IDLE_TIMEOUT 10
+#define LIFETIME_TIMEOUT 20
 
 void process_hashtable()
 {
     struct rte_table_netflow *t = (struct rte_table_netflow *)probe.table[0][0];
-    hashBucket_t *bkt;
+    hashBucket_t *temp, *bkt;
     hashBucket_t *export_list = NULL;
     struct rte_table_hashBucket *prev_next_pointer;
 
-    uint32_t i, entry;
+    uint32_t i, entry, idx;
     uint32_t sleep_time;
     struct timeval curr, lastseen, firstseen;
-
+    uint32_t export_count;
+ 
     while (1) {
-        sleep_time = 60 - (time(NULL) % 60);        /* Align minutes */
+        //sleep_time = 60 - (time(NULL) % 60);        /* Align minutes */
+        sleep_time = 10;
         sleep(sleep_time);
 
         /* check hash table */
         entry = t->n_entries;
         
+        export_count = 0;
         /* loop all entry */
+        printf("Start of check:export list must null:%p\n", export_list);
         for(i = 0; i < entry; i++) {
             /****************************************************************
              * Lock one entry (t->array[i]'s lock = t->lock[i]
@@ -151,14 +169,9 @@ void process_hashtable()
             /* lock the entry */
             gettimeofday(&curr, NULL);
 
-            /* check first bucket */
-            lastseen = bkt->lastSeenSent;
-            firstseen = bkt->firstSeenSent;
-
-            prev_next_pointer = t->array[i];
-
-            /* check after first bucket */
+            idx = 0; 
             while(bkt != NULL) {
+                temp = bkt->next;
                 /* check bucket timestamp */
                 lastseen = bkt->lastSeenSent;
                 firstseen = bkt->firstSeenSent;
@@ -167,15 +180,16 @@ void process_hashtable()
                     || ((curr.tv_sec - firstseen.tv_sec) > LIFETIME_TIMEOUT)   /* flow is active, but too old   */
                     || bkt->bucket_expired > 0 ) {
                     /* export bucket to export_list */
-                    prev_next_pointer = bkt->next;
                     bkt->next = export_list;
                     export_list = bkt;
+                    export_count++;
+                    printf("Add to export list:%d\n", export_count);
+                    /* if first bucket is exported, we loss t->array[i] */
+                    if (idx == 0) t->array[i] = temp;
 
-                    bkt = prev_next_pointer;
-                    continue;
                 }
-                prev_next_pointer = bkt->next;
-                bkt = bkt->next;
+                idx++;
+                bkt = temp;
             }
        
             rte_spinlock_unlock(&t->lock[i]);
@@ -185,7 +199,8 @@ void process_hashtable()
              **********************************************************************/
         }
         /* for each entry, check life time */
-        make_export(export_list);
+        if (export_count > 0)
+            export_list = make_export(export_list);
 
     } /* end of while */
 
