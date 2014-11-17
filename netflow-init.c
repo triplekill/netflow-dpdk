@@ -118,7 +118,7 @@ netflow_init(probe_t *probe)
     probe->collector.sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     bzero(&probe->collector.servaddr, sizeof(probe->collector.servaddr));
     probe->collector.servaddr.sin_family = AF_INET;
-    probe->collector.servaddr.sin_addr.s_addr = inet_addr("192.168.122.1");
+    probe->collector.servaddr.sin_addr.s_addr = inet_addr("192.168.1.160");
     probe->collector.servaddr.sin_port = rte_cpu_to_be_16(2055);
 
  

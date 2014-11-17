@@ -72,7 +72,7 @@ static int exportBucketToNetflowV5(hashBucket_t* bkt, uint8_t numFlows)
     theV5Flow.flowRecord[numFlows].src_mask  = 0;           // TODO
     theV5Flow.flowRecord[numFlows].dst_mask  = 0;           // TODO
     theV5Flow.flowRecord[numFlows].tcp_flags = bkt->src2dstTcpFlags;
-
+    theV5Flow.flowRecord[numFlows].proto     = bkt->proto;
 }
 
 hashBucket_t* makeNetFlowV5(hashBucket_t *list)
@@ -85,16 +85,14 @@ hashBucket_t* makeNetFlowV5(hashBucket_t *list)
     /* Make Records */
     while(list != NULL) {
         temp = list;
-        printf("num_flows:%d\n", num_flows);
+        //printf("num_flows:%d\n", num_flows);
         exportBucketToNetflowV5(list, num_flows - 1);
         list = list->next;
         rte_free(temp);
-        printf("free - 1\n");
         num_flows++;
         if(num_flows > V5FLOWS_PER_PAK) break;
     }
     num_flows--;
-    printf("num_flows2:%d\n", num_flows);
     theV5Flow.flowHeader.count = rte_cpu_to_be_16(num_flows);
     return list; 
 }
@@ -105,7 +103,7 @@ static void sendNetflowV5()
     uint16_t record_count;
 
     theV5Flow.flowHeader.flow_sequence = rte_cpu_to_be_32(flow_sequence++);
-    record_count = rte_cpu_to_le_16(theV5Flow.flowHeader.count);
+    record_count = rte_cpu_to_be_16(theV5Flow.flowHeader.count);
     printf("record count:%d\n", record_count);
     msg_length = sizeof(struct flow_ver5_hdr) + record_count * sizeof(struct flow_ver5_rec);
     sendto(probe.collector.sockfd, (void *)&theV5Flow, msg_length, 0, (struct sockaddr *)&probe.collector.servaddr, sizeof(probe.collector.servaddr));
@@ -127,8 +125,8 @@ static hashBucket_t* make_export(hashBucket_t *export_list)
     printf("should be NULL(export_list:%p)\n", export_list);
     return export_list;
 }
-#define IDLE_TIMEOUT 10
-#define LIFETIME_TIMEOUT 20
+#define IDLE_TIMEOUT 60
+#define LIFETIME_TIMEOUT 120
 
 void process_hashtable()
 {
@@ -143,8 +141,8 @@ void process_hashtable()
     uint32_t export_count;
  
     while (1) {
-        //sleep_time = 60 - (time(NULL) % 60);        /* Align minutes */
-        sleep_time = 10;
+        sleep_time = 60 - (time(NULL) % 60);        /* Align minutes */
+        //sleep_time = 10;
         sleep(sleep_time);
 
         /* check hash table */
@@ -185,7 +183,7 @@ void process_hashtable()
                     bkt->next = export_list;
                     export_list = bkt;
                     export_count++;
-                    printf("Add to export list:%d\n", export_count);
+                    //printf("Add to export list:%d\n", export_count);
                     /* if first bucket is exported, we loss t->array[i] */
                     if (idx == 0) t->array[i] = temp;
 

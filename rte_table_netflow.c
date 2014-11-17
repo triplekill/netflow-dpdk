@@ -130,7 +130,7 @@ rte_table_netflow_entry_add(
 
     if( !updated ) {
         /* Create New Bucket */
-        printf("First Seen : %" PRIu32 "\n", idx);
+        //printf("First Seen : %" PRIu32 "\n", idx);
         bkt = (hashBucket_t *)rte_zmalloc("BUCKET", sizeof(hashBucket_t), CACHE_LINE_SIZE);
         bkt->magic = 1;
         bkt->vlanId     = k->vlanId;
