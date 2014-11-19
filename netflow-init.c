@@ -92,7 +92,7 @@ netflow_init(probe_t *probe)
     for (pid = 0; pid < probe->nb_ports; pid++) {
         RTE_LOG(DEBUG, PMD, "Init Port(%d)\n", pid);
 
-        ret = rte_eth_dev_configure(pid, 1, 1, &port_conf);
+        ret = rte_eth_dev_configure(pid, probe->nb_queues, 1, &port_conf);
         if (ret < 0)
             rte_exit(EXIT_FAILURE, "Cannot configure device: err=%d, port=%d\n", ret, pid);
 
@@ -118,8 +118,8 @@ netflow_init(probe_t *probe)
     probe->collector.sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     bzero(&probe->collector.servaddr, sizeof(probe->collector.servaddr));
     probe->collector.servaddr.sin_family = AF_INET;
-    probe->collector.servaddr.sin_addr.s_addr = inet_addr("192.168.1.160");
-    probe->collector.servaddr.sin_port = rte_cpu_to_be_16(2055);
+    probe->collector.servaddr.sin_addr.s_addr = inet_addr(probe->collector.addr);
+    probe->collector.servaddr.sin_port = rte_cpu_to_be_16(probe->collector.port);
 
  
 printf("----------- MEMORY_SEGMENTS -----------\n");

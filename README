@@ -17,12 +17,14 @@ export RTE_TARGET=x86_64-native-linuxapp-gcc
 make
 
 = Run =
-ex) 1 lcore
-dprobe -c 0x1 -n 1 -- -p 0x1
 
 To run, command line interpreter, run 2 threads
 ex) 2 lcore
-dprobe -c 0x3 -n 2 -- -p 0x1
+dprobe -c 0x3 -n 2 -- -p 0x1 -H 127.0.0.1 -P 2055 -q 2
+
+-H : Netflow Collector IP
+-P : Netflow Collector Port Number
+-q : Number of Receive queues
 
 = Reference =
 * DPDK build : http://sunshout.tistory.com/1556

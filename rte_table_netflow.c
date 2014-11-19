@@ -112,7 +112,7 @@ rte_table_netflow_entry_add(
             }
 
             /* accumulated Bytes */
-            bucket->bytesSent += rte_be_to_cpu_16(ip->total_length);
+            bucket->bytesSent += rte_cpu_to_le_16(ip->total_length);
             bucket->pktSent++;
 
             /* Time */
@@ -156,7 +156,7 @@ rte_table_netflow_entry_add(
         }
 
         /* Bytes (Total number of Layer 3 bytes)  */
-        bkt->bytesSent = rte_be_to_cpu_16(ip->total_length);
+        bkt->bytesSent = rte_cpu_to_le_16(ip->total_length);
         bkt->pktSent++;
 
         /* Time */

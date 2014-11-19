@@ -54,7 +54,7 @@ typedef struct port_info_s {
 
 /* Netflow Collector information */
 typedef struct collector_s {
-    char* addr;
+    char addr[16];
     int port;
     int sockfd;
     struct sockaddr_in servaddr;
@@ -64,6 +64,7 @@ typedef struct probe_s {
     //struct cmdline        *cli;
     char*                   *hostname;              /* hostname */
     uint8_t                 nb_ports;
+    uint8_t                 nb_queues;
     uint16_t                nb_rxd;
     uint16_t                nb_txd;
     uint16_t                portNum;

@@ -57,8 +57,29 @@ netflow_usage(const char *prgname)
 {
     printf("Usage: %s [EAL options] -- [-h]\n"
             " -m <string> matrix for mapping ports to logical cores\n"
+            " -q <number> number of Queues per port\n"
+            " -H <collector IP> (default:127.0.0.1)\n"
+            " -P <collector Port> (default:2055)\n"
             " -h        Display the help information\n",
             prgname);
+}
+
+static void
+parse_netflow_collector_host(const char *str)
+{
+    sscanf(str, "%s", probe.collector.addr);
+}
+static void
+parse_netflow_collector_port(const char *str)
+{
+    sscanf(str, "%d", &probe.collector.port);
+}
+
+
+static void
+parse_netflow_num_queues(const char *str)
+{
+    sscanf(str, "%d", &probe.nb_queues);
 }
 
 /****************************************************************************** 
@@ -83,16 +104,23 @@ netflow_parse_args(int argc, char **argv)
 
     argvopt = argv;
 
-    while ((opt = getopt_long(argc, argvopt, "p:",
+    while ((opt = getopt_long(argc, argvopt, "H:P:q:",
                   lgopts, &option_index)) != EOF) {
 
         switch (opt) {
         /* portmask */
-        case 'p':
-            // Port mask not used anymore
+        case 'H':
+            // Collector IP
+            parse_netflow_collector_host(optarg);
             break;
-
-
+        case 'P':
+            // Collector Port
+            parse_netflow_collector_port(optarg);
+            break;
+        case 'q':
+            // Number of Queues / Port 
+            parse_netflow_num_queues(optarg);
+            break;
         /* long options */
         case 0:
             netflow_usage(prgname);
