@@ -29,10 +29,8 @@ setup_netflow_table(probe_t* p)
    
     
     int i,j;
-    for (i = 0; i < 2; i++) {
-        for (j = 0; j < 2; j++) {
-            p->table[i][j] = (struct rte_table_netflow *)rte_table_netflow_create(&param, j, sizeof(hashBucket_t));
-        }
+    for (i = 0; i < p->nb_ports; i++) {
+        p->table[i] = (struct rte_table_netflow *)rte_table_netflow_create(&param, i, sizeof(hashBucket_t));
     }
 }   
 

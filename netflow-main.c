@@ -140,6 +140,15 @@ netflow_parse_args(int argc, char **argv)
     return ret;
 }
 
+void init_probe(probe_t *p)
+{
+    memset(p, 0, sizeof(probe));
+    /* set default vaule */
+    strcpy(p->collector.addr, "127.0.0.1");
+    p->collector.port = 2055;
+
+    p->nb_queues = 1;
+}
 
 
 int main(int argc, char **argv)
@@ -155,8 +164,8 @@ int main(int argc, char **argv)
     // call before the rte_eal_init()
     (void)rte_set_application_usage_hook(netflow_usage);
 
-    memset(&probe, 0, sizeof(probe));
-
+    init_probe(&probe);
+    
     netflow_logo(8, 0, NETFLOW_APP_NAME); 
     sleep(2);
     

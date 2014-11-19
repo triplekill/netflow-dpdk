@@ -81,7 +81,7 @@ typedef struct probe_s {
 
     /* hash table */
     //struct rte_table_netflow my_table[2];
-    struct rte_table_netflow *table[2][2];
+    struct rte_table_netflow *table[_RTE_MAX_ETHPORTS];
 
 } probe_t;
 

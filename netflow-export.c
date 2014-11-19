@@ -130,7 +130,10 @@ static hashBucket_t* make_export(hashBucket_t *export_list)
 
 void process_hashtable()
 {
-    struct rte_table_netflow *t = (struct rte_table_netflow *)probe.table[0][0];
+    //temp
+    int pid = 0;
+
+    struct rte_table_netflow *t = (struct rte_table_netflow *)probe.table[pid];
     hashBucket_t *temp, *bkt;
     hashBucket_t *export_list = NULL;
     struct rte_table_hashBucket *prev_next_pointer;

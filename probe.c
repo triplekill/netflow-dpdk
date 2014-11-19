@@ -59,7 +59,7 @@ void
 process_ipv4(struct rte_mbuf * m, int pid, int vlan)
 {
     port_info_t *info = &probe.info[pid];
-    struct rte_table_netflow *t = (struct rte_table_netflow *)probe.table[0][0];
+    struct rte_table_netflow *t = (struct rte_table_netflow *)probe.table[pid];
     hashBucket_t *bkt;
     int key_found=0;
     char proto;
