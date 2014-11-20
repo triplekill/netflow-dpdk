@@ -20,11 +20,15 @@ make
 
 To run, command line interpreter, run 2 threads
 ex) 2 lcore
-dprobe -c 0x3 -n 2 -- -p 0x1 -H 127.0.0.1 -P 2055 -q 2
+./build/dprobe -c 0x3 -n 2 -- -p 0x1 -H 127.0.0.1 -P 2055 -q 2
 
 -H : Netflow Collector IP
 -P : Netflow Collector Port Number
 -q : Number of Receive queues
+
+./build/dprobe -c 0x15 -n 4 -- -m "2:0.0,4:0.1" -q 2
+desc: lcore(2) processes port(0) queue(0)
+      lcore(4) processes port(0) queue(1)
 
 = Reference =
 * DPDK build : http://sunshout.tistory.com/1556

@@ -51,6 +51,7 @@ typedef struct port_info_s {
 //##### Temp #####
 #define _RTE_MAX_ETHPORTS 2
 #define _NB_SOCKETS 2
+#define _MAX_LCORE 8
 
 /* Netflow Collector information */
 typedef struct collector_s {
@@ -60,6 +61,13 @@ typedef struct collector_s {
     struct sockaddr_in servaddr;
 } collector_t;
 
+/* lcore, port, queue mapping table */
+typedef struct l2p_s {
+    uint8_t lcore_id;
+    uint8_t port_id;
+    uint8_t queue_id;
+} l2p_t;
+
 typedef struct probe_s {
     //struct cmdline        *cli;
     char*                   *hostname;              /* hostname */
@@ -68,13 +76,13 @@ typedef struct probe_s {
     uint16_t                nb_rxd;
     uint16_t                nb_txd;
     uint16_t                portNum;
-    struct ether_addr       ports_eth_addr[RTE_MAX_ETHPORTS];
+    struct ether_addr       ports_eth_addr[_RTE_MAX_ETHPORTS];
 
     // Netflow collector
     collector_t collector;
 
     // port to lcore mapping
-    //l2p_t                   *l2p;
+    l2p_t                   l2p[_MAX_LCORE];
 
     /* Statistics */
     port_info_t             info[_RTE_MAX_ETHPORTS];     /**< Port Information                 */

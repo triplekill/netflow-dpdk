@@ -35,45 +35,40 @@ setup_netflow_table(probe_t* p)
 }   
 
 int
-init_memory(unsigned nb_mbuf, uint8_t pid)
+init_memory(unsigned nb_mbuf, uint8_t pid, uint8_t nb_queues)
 {
     uint8_t lid;    // lcore_id
     int sid;        // socket_id
     int ret;
-    uint32_t    q;  
+    uint8_t qid;    // queue_id  
     char s[64];
+    uint8_t i;
 
-    RTE_LCORE_FOREACH_SLAVE(lid) {
-        if (rte_lcore_is_enabled(lid) == 0)
-            continue;
-        if (numa_on)
-            sid = rte_lcore_to_socket_id(lid);
-        else
-            sid = 0;
+    if (numa_on)
+        sid = rte_lcore_to_socket_id(lid);
+    else
+        sid = 0;
 
-        /* mempool */
-        if (pktmbuf_pool[sid] == NULL) {
-            snprintf(s, sizeof(s), "netflow_pool_%d", sid);
-            pktmbuf_pool[sid] =
-                rte_mempool_create(s, nb_mbuf, MBUF_SIZE, MEMPOOL_CACHE_SIZE,
-                    sizeof(struct rte_pktmbuf_pool_private),
-                    rte_pktmbuf_pool_init, NULL,
-                    rte_pktmbuf_init, NULL,
-                    sid, 0);
-            if (pktmbuf_pool[sid] == NULL)
-                rte_exit(EXIT_FAILURE, "Cannot init mbuf pool on socket(%d)\n", sid);
-        }
-
-        /* mbuf pool */
-        for (q = 0; q < 1; q++) {
-            ret = rte_eth_rx_queue_setup(pid, q, 512, sid, &rx_conf, pktmbuf_pool[sid]);
-            if (ret < 0)
-                rte_exit(EXIT_FAILURE, "Failed to rx_queue_setup\n");
-        }
-        for (q = 0; q < 1; q++) {
-            ret = rte_eth_tx_queue_setup(pid, q, 128, sid, &tx_conf);
-        }
+    /* mempool */
+    if (pktmbuf_pool[sid] == NULL) {
+        snprintf(s, sizeof(s), "netflow_pool_%d", sid);
+        pktmbuf_pool[sid] =
+            rte_mempool_create(s, nb_mbuf, MBUF_SIZE, MEMPOOL_CACHE_SIZE,
+                sizeof(struct rte_pktmbuf_pool_private),
+                rte_pktmbuf_pool_init, NULL,
+                rte_pktmbuf_init, NULL,
+                sid, 0);
+        if (pktmbuf_pool[sid] == NULL)
+            rte_exit(EXIT_FAILURE, "Cannot init mbuf pool on socket(%d)\n", sid);
     }
+
+    /* mbuf pool */
+    for(i = 0; i < nb_queues; i++) {
+        ret = rte_eth_rx_queue_setup(pid, i, 512, sid, &rx_conf, pktmbuf_pool[sid]);
+        if (ret < 0)
+            rte_exit(EXIT_FAILURE, "Failed to rx_queue_setup\n");
+    }
+    ret = rte_eth_tx_queue_setup(pid, 0, 128, sid, &tx_conf);
 
 }
 
@@ -90,6 +85,7 @@ netflow_init(probe_t *probe)
     for (pid = 0; pid < probe->nb_ports; pid++) {
         RTE_LOG(DEBUG, PMD, "Init Port(%d)\n", pid);
 
+        // param (port_id,nb_rx_queue, nb_tx_queue, ...)
         ret = rte_eth_dev_configure(pid, probe->nb_queues, 1, &port_conf);
         if (ret < 0)
             rte_exit(EXIT_FAILURE, "Cannot configure device: err=%d, port=%d\n", ret, pid);
@@ -98,7 +94,7 @@ netflow_init(probe_t *probe)
             print_ethaddr("MAC address:", &probe->ports_eth_addr[pid]);
 
         /* init memory per port */
-        if (init_memory(NB_MBUF, pid) < 0)
+        if (init_memory(NB_MBUF, pid, probe->nb_queues) < 0)
             rte_exit(EXIT_FAILURE, "Fail to initialize memory\n");
 
         /* start device */

@@ -183,18 +183,33 @@ int
 launch_probe(__attribute__((unused)) void *arg)
 {
     uint8_t lcore_id = rte_lcore_id();
-    uint8_t nb_rx, pid, j;
+    uint8_t nb_rx, pid, qid, i, j;
     struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
     struct rte_mbuf *m;
     
     printf("## lcore_id:%d\n", lcore_id);
+    /* find l2p mapping */
+    l2p_t *l2p;
+    for (i = 0; i <= _MAX_LCORE; i++) {
+        l2p = &probe.l2p[i];
+        if (l2p->lcore_id == lcore_id) {
+            pid = l2p->port_id;
+            qid = l2p->queue_id;
+            break;
+        }
+    }
+    printf("lcore ID:%d\n", lcore_id);
+    printf("port  ID:%d\n", pid);
+    printf("queue ID:%d\n", qid);
 
-    pid = 0;
     while(!quit) {
         // Read packet from RX Queue
-        nb_rx = rte_eth_rx_burst(pid, 0, pkts_burst, MAX_PKT_BURST);
+        // param0: port ID
+        // param1: queue ID
+        nb_rx = rte_eth_rx_burst(pid, qid, pkts_burst, MAX_PKT_BURST);
 		if (unlikely(nb_rx == 0)) continue;
 
+        //printf("lcore(%d) nb_packet(%d)\n", lcore_id, nb_rx);
 	    // classify the packets
         packet_classify_bulk(pkts_burst, nb_rx, pid);
 

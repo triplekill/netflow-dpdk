@@ -112,7 +112,10 @@ rte_table_netflow_entry_add(
             }
 
             /* accumulated Bytes */
-            bucket->bytesSent += rte_cpu_to_le_16(ip->total_length);
+            /* TODO: if bytesSent > 2^32, netflow v5 value is wrong
+             *  since, netflow v5 dOctet is 32bit.
+             */
+            bucket->bytesSent += rte_cpu_to_be_16(ip->total_length);
             bucket->pktSent++;
 
             /* Time */
@@ -156,7 +159,7 @@ rte_table_netflow_entry_add(
         }
 
         /* Bytes (Total number of Layer 3 bytes)  */
-        bkt->bytesSent = rte_cpu_to_le_16(ip->total_length);
+        bkt->bytesSent = rte_cpu_to_be_16(ip->total_length);
         bkt->pktSent++;
 
         /* Time */
