@@ -2,6 +2,7 @@
  *   BSD LICENSE
  * 
  *   Copyright(c) 2014 Choonho Son All rights reserved.
+ *   choonho.son@gmail.com
  *   All rights reserved.
  * 
  *   Redistribution and use in source and binary forms, with or without
@@ -79,7 +80,45 @@ parse_netflow_collector_port(const char *str)
 static void
 parse_netflow_num_queues(const char *str)
 {
-    sscanf(str, "%d", &probe.nb_queues);
+    int num;
+    sscanf(str, "%d", &num);
+    probe.nb_queues = num;
+}
+
+static void
+parse_netflow_l2p(const char *str)
+{
+    /* str ex) "1:0.0,2:0.1"
+     * means lcore(1) processes port(0) + qeuue(0)
+     *       lcore(2) processes port(0) + queue(1)
+     */
+    char temp[64];
+    strcpy(temp, str);
+    char *ptr;
+    int lid,pid,qid;
+    int idx=0;
+    int lcore_count = 0;
+    uint8_t lcore_id;
+
+    ptr = strtok(temp, ",");
+    sscanf(ptr, "%d:%d.%d", &lid, &pid, &qid);
+    probe.l2p[idx].lcore_id = lid;
+    probe.l2p[idx].port_id = pid;
+    probe.l2p[idx].queue_id = qid;
+    idx++;
+    while (ptr = strtok(NULL, ",")) {
+        sscanf(ptr, "%d:%d.%d", &lid, &pid, &qid);
+        probe.l2p[idx].lcore_id = lid;
+        probe.l2p[idx].port_id = pid;
+        probe.l2p[idx].queue_id = qid;
+        idx++;
+    }
+    RTE_LCORE_FOREACH_SLAVE(lcore_id) {
+        lcore_count++;
+    }
+    if (idx != lcore_count) {
+        printf("ERROR: lcore_count(%d) and mapping(%d) is not match\n", --lcore_count, --idx);
+    }    
 }
 
 /****************************************************************************** 
@@ -104,11 +143,16 @@ netflow_parse_args(int argc, char **argv)
 
     argvopt = argv;
 
-    while ((opt = getopt_long(argc, argvopt, "H:P:q:",
+    while ((opt = getopt_long(argc, argvopt, "m:H:P:q:",
                   lgopts, &option_index)) != EOF) {
 
         switch (opt) {
-        /* portmask */
+        case 'm':
+            /* lcore:port.queue mapping 
+             * ex) -m "1:0.0" means lcore1 processes queueue 0 of port 0
+             */
+            parse_netflow_l2p(optarg);
+            break;
         case 'H':
             // Collector IP
             parse_netflow_collector_host(optarg);

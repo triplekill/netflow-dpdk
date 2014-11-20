@@ -29,7 +29,9 @@ static const struct rte_eth_conf port_conf = {
     .rx_adv_conf = {
         .rss_conf = {
             .rss_key = NULL,
-            .rss_hf = ETH_RSS_IPV4 | ETH_RSS_IPV6,
+            .rss_hf = ETH_RSS_IPV4 | ETH_RSS_IPV6,              /* 1/10G RSS offload features */
+            //.rss_hf   = ETH_RSS_NONF_IPV4_UDP | 
+            //               ETH_RSS_NONF_IPV4_TCP,              /* 40G RSS offload features */
         },
     },
     .txmode = {
