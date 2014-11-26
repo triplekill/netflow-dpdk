@@ -134,6 +134,9 @@ netflow_init(probe_t *probe)
             rte_exit(EXIT_FAILURE, "Fail to start dev\n");
 
         rte_eth_promiscuous_enable(pid);
+
+        /* log ethernet init stats */
+        rte_eth_stats_get(pid, &probe->info[pid].init_stats);
     }
 
     /* netflow hash table init */

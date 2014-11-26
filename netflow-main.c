@@ -30,11 +30,12 @@
 
 #include "netflow-main.h"
 
+#include <rte_log.h>
 #include "probe.h"
 #include "netflow-display.h"
 #include "netflow-init.h"
 #include "netflow-export.h"
-
+#include "netflow-logs.h"
 #include <signal.h>
 
 probe_t probe;
@@ -113,7 +114,7 @@ parse_netflow_l2p(const char *str)
         lcore_count++;
     }
     if (idx != lcore_count) {
-        printf("ERROR: lcore_count(%d) and mapping(%d) is not match\n", --lcore_count, --idx);
+        NETFLOW_INIT_LOG(ERR, "ERROR: lcore_count(%d) and mapping(%d) is not match\n", --lcore_count, --idx);
     }    
 }
 

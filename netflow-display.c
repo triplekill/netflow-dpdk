@@ -34,7 +34,10 @@
 #include <stdio.h>
 #include <unistd.h>
 
+#include <rte_log.h>
+#include <rte_ethdev.h>
 #include "probe.h"
+#include "netflow-logs.h"
 
 extern probe_t  probe;
 
@@ -69,12 +72,25 @@ clrscr()
 void
 netflow_print(int signo)
 {
-    port_info_t *info = &probe.info[0];
-    printf("############ Statistics ###############\n");
-    printf("+Pkts\n");
-    printf(" +---ARP : %" PRIu64 "\n", info->stats.arp_pkts);
-    printf(" +---IPv4: %" PRIu64 "\n", info->stats.ip_pkts);
-    printf(" +---IPv6: %" PRIu64 "\n", info->stats.ipv6_pkts);
+    int i;
+    port_info_t *info;
+    printf("\n\n\n"); 
+    NETFLOW_DISPLAY(INFO, "############ Statistics ###############\n");
+    for (i = 0; i < probe.nb_ports; i++) {
+        info = &probe.info[i];
+        NETFLOW_DISPLAY(INFO, "+Processing(Port: %d)\n", i);
+        NETFLOW_DISPLAY(INFO, " +---ARP : %" PRIu64 "\n", info->stats.arp_pkts);
+        NETFLOW_DISPLAY(INFO, " +---IPv4: %" PRIu64 "\n", info->stats.ip_pkts);
+        NETFLOW_DISPLAY(INFO, " +---IPv6: %" PRIu64 "\n", info->stats.ipv6_pkts);
+    
+        /* log ethernet stat */
+        rte_eth_stats_get(i, &info->port_stats);
+        NETFLOW_DISPLAY(INFO, "+Ethernet Stats(Port: %d)\n", i);
+        NETFLOW_DISPLAY(INFO, " +---ipackets: %" PRIu64 "\n", info->port_stats.ipackets - info->init_stats.ipackets);
+        NETFLOW_DISPLAY(INFO, " +---ibytes  : %" PRIu64 "\n", info->port_stats.ibytes - info->init_stats.ibytes);
+        NETFLOW_DISPLAY(INFO, " +---imissed : %" PRIu64 "\n", info->port_stats.imissed - info->init_stats.imissed);
+    }
+
     exit(1);
 }
 
